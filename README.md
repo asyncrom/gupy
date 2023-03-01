@@ -13,7 +13,7 @@ This repo record the evolution of the making from scratch of a 0.7meters RC sail
 ***
 ## Designing the hull
 
-The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro by dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
+The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro by my dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
 
 <img src="assets/fc_01.png" alt="drawing" width="75"/> <img src="assets/fc_02.png" alt="drawing" width="620"/>
 
