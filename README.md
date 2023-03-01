@@ -1,4 +1,4 @@
-# Gupy (Guillaume Personal Yatch)
+# Gupy
 
  <img src="assets/gupy_logo.png" alt="drawing" width="200"/>
 
@@ -6,7 +6,9 @@
 ***
 ## Designing the hull
 
-TODO
+The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro by dad. Check the code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro)
+
+<img src="assets/fc_01.png" alt="drawing" width="75"/> <img src="assets/fc_02.png" alt="drawing" width="620"/>
 
 ## Creating the skeleton
 
@@ -44,4 +46,4 @@ Now the structure of the hull is done !
 ## Making the hull stronger !
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
-[This ressource](https://navi.modelisme.com/article138.html)(in French) helped me to create the resin in the right proportions.
+[This ressource](https://navi.modelisme.com/article138.html)  (in French) helped me to create the resin in the right proportions.

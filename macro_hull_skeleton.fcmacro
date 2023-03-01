@@ -1,0 +1,922 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# ...
+import FreeCAD
+import Sketcher
+import Part
+
+import math
+import numpy
+
+
+
+
+
+# Fonction de tracé par segment de droite de la courbe définie par les points [liste_x, liste_y]
+# Renvoi des indexes des extrémités: [id segment extrémité 1, id point segment extrémité 1, id segment extrémité 2, id point segment extrémité 2]
+def trace_courbe (esq, liste_x, liste_y) :
+
+  # initialisation des tableaux
+  id_extremites = [0, 0, 0, 0]
+  id_segmt = [0, 0]
+
+  # vérification de la longueur des listes
+  n = len(liste_x)
+  if len(liste_y) != n :
+    return id_extremites
+
+  # s'il n'y a qu'une abscisse, tracé d'un point
+  if n == 1 :
+    x1 = liste_x[0]
+    y1 = liste_y[0]
+    segmt = Part.Point( App.Vector ( x1 , y1 , 0 ) )
+    id_extremites[0] = esq.addGeometry(segmt)
+    id_extremites[1] = 1
+    id_extremites[2] = id_extremites[0]
+    id_extremites[3] = 1
+
+  # si plus d'une abscisse
+  elif n > 1 :
+    x1 = liste_x[0]
+    y1 = liste_y[0]
+
+    for i in range(n-1) :
+      x2 = liste_x[i+1]
+      y2 = liste_y[i+1]
+
+      # si [x1,y1] <> [x2,y2], il s'agit d'un segment
+      if (x1 != x2) or (y1 != y2) :
+        segmt = Part.LineSegment( App.Vector ( x1 , y1 , 0 ) , App.Vector ( x2 , y2 , 0 ) )
+        id_segmt[0] = esq.addGeometry(segmt)
+        id_segmt[1] = 2
+        # fixation des coordonnées de (x2,y2)
+        esq.addConstraint(Sketcher.Constraint('DistanceX',id_segmt[0],id_segmt[1],x2)) 
+        esq.addConstraint(Sketcher.Constraint('DistanceY',id_segmt[0],id_segmt[1],y2))
+
+      # si x1 = x2, il s'agit d'un point
+      else :
+        segmt = Part.Point( App.Vector ( x1 , y1 , 0 ) )
+        id_segmt[0] = esq.addGeometry(segmt)
+        id_segmt[1] = 1
+ 
+      # s'il s'agit du premier segment, memorisation 
+      if i == 0 :
+        id_extremites[0] = id_segmt[0]
+        id_extremites[1] = 1
+      # sinon, connexion avec le précédent segment
+      else :
+        esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites[2], id_extremites[3], id_segmt[0], 1))
+
+      id_extremites[2] = id_segmt[0]
+      id_extremites[3] = id_segmt[1]
+      x1 = x2
+      y1 = y2
+
+  return id_extremites
+
+
+
+
+# Fonction de calcul des ordonnées du pont en fonction du vecteur d'abscisses transmis en argument
+# Fonction C1 par morceaux d'équations a*x**2+b*x+c sur [x1, (x1+x2)/2], [(x1+x2)/2, x2] [x2, (x2+x3)/2], [(x2+x3)/2, x3] (x1 = étrave, x2 = maitre-baud, x3 = poupe)
+# Cf. tableau calculs carène
+# Renvoi du vecteur des ordonnées
+def ordonnees_pont (longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, x) :
+
+  x1 = 0.0 # abscisse étrave
+  y1 = largeur_pont_etrave / 2.0
+  x2 = x1 + position_maitre_bau_etrave # abscisse maître-bau
+  y2 = largeur_pont_maitre_bau / 2.0
+  x3 = x1 + longueur_etrave_poupe # abscisse poupe
+  y3 = largeur_pont_poupe / 2.0
+
+  x12 = x1 + 0.50*(x2 - x1) # abscisse milieu étrave à maître-bau
+  x23 = x2 + 0.50*(x3 - x2) # abscisse milieu maître-bau à poupe
+
+  tan1 = math.tan( angle_bord_etrave / 180.0 * math.pi )
+  tan2 = math.tan( angle_bord_maitre_bau / 180.0 * math.pi )
+  tan3 = math.tan( angle_bord_poupe / 180.0 * math.pi )
+  d12a = x12 - x1
+  d12b = x12 - x2
+  d23a = x23 - x2
+  d23b = x23 - x3
+
+  K12 = (-tan1 + tan2)/2.0
+  K23 = (-tan2 + tan3)/2.0
+  L12 = -y1 + y2 - d12a * tan1 + d12b * tan2
+  L23 = -y2 + y3 - d23a * tan2 + d23b * tan3
+
+  a12a = (d12b*K12-L12) / (d12a*d12b - d12a**2)
+  a12b = (d12a*K12-L12) / (d12b**2 - d12a*d12b)
+  a23a = (d23b*K23-L23) / (d23a*d23b - d23a**2)
+  a23b = (d23a*K23-L23) / (d23b**2 - d23a*d23b)
+
+  b12a = tan1 - 2*x1*a12a
+  b12b = tan2 - 2*x2*a12b
+  b23a = tan2 - 2*x2*a23a
+  b23b = tan3 - 2*x3*a23b
+ 
+  c12a = y1 - a12a*x1**2 - b12a*x1
+  c12b = y2 - a12b*x2**2 - b12b*x2
+  c23a = y2 - a23a*x2**2 - b23a*x2
+  c23b = y3 - a23b*x3**2 - b23b*x3
+
+  # vecteur des ordonnées
+  a = ((x >= x1) & (x <= x12)) * a12a + ((x > x12) & (x <= x2)) * a12b + ((x > x2) & (x <= x23)) * a23a + ((x > x23)) * a23b
+  b = ((x >= x1) & (x <= x12)) * b12a + ((x > x12) & (x <= x2)) * b12b + ((x > x2) & (x <= x23)) * b23a + ((x > x23)) * b23b
+  c = ((x >= x1) & (x <= x12)) * c12a + ((x > x12) & (x <= x2)) * c12b + ((x > x2) & (x <= x23)) * c23a + ((x > x23)) * c23b
+  y = a*x**2 + b*x + c
+
+  return y
+
+
+
+
+# Fonction de tracé de l'esquisse du pont
+# constituée de courbes de pont internes et externes tribord et babord
+# Positionnement des encoches
+def trace_esq_pont (position_etrave, hauteur_pont_etrave, angle_pont_etrave_poupe, longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, epaisseur_etrave, epaisseur_bord, positions_couples_etrave, profondeur_encoche_etrave, profondeur_encoches_couples, epaisseur_bois) :
+
+  # création et positionnement de l'esquisse
+  esq = App.ActiveDocument.addObject('Sketcher::SketchObject','Pont')
+  esq.Placement = App.Placement(App.Vector(0.0, position_etrave, hauteur_pont_etrave), App.Rotation(90.0, angle_pont_etrave_poupe, 0.0))
+
+  # nombre de segments à tracer entre 2 couples
+  nb_segments_entre_couples = 3
+
+  # liste des abscisses du tracé extérieur: point d'étrave
+  abscisses_etrave_poupe_ext = numpy.array([0.0])
+  # liste des abscisses du tracé intérieur: point d'étrave intérieur
+  abscisses_etrave_poupe_int = numpy.array([0.0+epaisseur_etrave])
+  # décalage des abscisses et ordonnées aux encoches
+  delta_abscisses_encoches = numpy.array([0.0])
+  delta_ordonnees_encoches = numpy.array([0.0])
+
+  # liste des abscisses: ajout de nb_segments_entre_couples points entre chaque couple, avec insertion de 4 points d'encoches au niveau de chaque couple pour le tracé intérieur
+  precedente_position = abscisses_etrave_poupe_ext[0]
+  for position in positions_couples_etrave :
+    if position > precedente_position :
+      for i in range (nb_segments_entre_couples) :
+        abscisses_etrave_poupe_ext = numpy.append( abscisses_etrave_poupe_ext, precedente_position + (i+1) * (position - precedente_position) / nb_segments_entre_couples )
+        if abscisses_etrave_poupe_ext[-1] > (0.0+epaisseur_etrave) :
+          abscisses_etrave_poupe_int = numpy.append( abscisses_etrave_poupe_int, abscisses_etrave_poupe_ext[-1])
+          delta_abscisses_encoches = numpy.append( delta_abscisses_encoches, 0.0)
+          delta_ordonnees_encoches = numpy.append( delta_ordonnees_encoches, 0.0)
+      if abscisses_etrave_poupe_ext[-1] > (0.0+epaisseur_etrave) :
+        # ajout d'une encoche au niveau du couple (composee de 4 points ; de largeur epaisseur_bois ; de profondeur profondeur_encoches_couples)
+        # les abscisses du fond d'encoche sont fixées au milieu de l'encoche pour le calcul des ordonnées puis ajustées après
+        abscisses_etrave_poupe_int[-1] = abscisses_etrave_poupe_int[-1] - epaisseur_bois/2.0
+        abscisses_etrave_poupe_int = numpy.append( abscisses_etrave_poupe_int, [abscisses_etrave_poupe_ext[-1], abscisses_etrave_poupe_ext[-1], (abscisses_etrave_poupe_ext[-1] + epaisseur_bois/2.0)] )
+        delta_abscisses_encoches = numpy.append( delta_abscisses_encoches, [-epaisseur_bois/2.0, epaisseur_bois/2.0, 0.0] )
+        delta_ordonnees_encoches = numpy.append( delta_ordonnees_encoches, [profondeur_encoches_couples, profondeur_encoches_couples, 0.0]) 
+    precedente_position = position
+
+  # correction de l'encoche de poupe: demi-encoche composée de 3 points élargie d'une demi épaisseur bois (augmente la longueur totale d'une demi épaisseur bois)
+  abscisses_etrave_poupe_int = numpy.delete( abscisses_etrave_poupe_int, -1 )
+  delta_abscisses_encoches = numpy.delete( delta_abscisses_encoches, -1 )
+  delta_ordonnees_encoches = numpy.delete( delta_ordonnees_encoches, -1 )
+  abscisses_etrave_poupe_ext[-1] = abscisses_etrave_poupe_ext[-1] + epaisseur_bois/2.0
+
+
+  # vecteurs des ordonnées des demi-courbes extérieure et intérieure
+  ordonnees_ext = ordonnees_pont (longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, abscisses_etrave_poupe_ext)
+  ordonnees_int = ordonnees_pont (longueur_etrave_poupe, position_maitre_bau_etrave, (largeur_pont_etrave - 2.0*epaisseur_bord), (largeur_pont_maitre_bau - 2.0*epaisseur_bord), (largeur_pont_poupe - 2.0*epaisseur_bord), angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, abscisses_etrave_poupe_int)
+
+  # ajustement des abscisses et ordonnées aux encoches
+  abscisses_etrave_poupe_int = abscisses_etrave_poupe_int + delta_abscisses_encoches
+  ordonnees_int = ordonnees_int + delta_ordonnees_encoches
+
+
+  # tracé des courbes tribord et babord extérieures
+  id_extremites_tribord_ext = trace_courbe (esq, abscisses_etrave_poupe_ext, ordonnees_ext)
+  id_extremites_babord_ext = trace_courbe (esq, abscisses_etrave_poupe_ext, -ordonnees_ext)
+
+
+  # contraitnes sur les extrémités d'étrave extérieure
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_tribord_ext[0],id_extremites_tribord_ext[1],abscisses_etrave_poupe_ext[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_tribord_ext[0],id_extremites_tribord_ext[1],ordonnees_ext[0]))
+  
+  # si largeur d'étrave extérieure non nulle, ajout d'un segment
+  if ordonnees_ext[0] != 0 :
+    esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_babord_ext[0],id_extremites_babord_ext[1],abscisses_etrave_poupe_ext[0])) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_babord_ext[0],id_extremites_babord_ext[1],-ordonnees_ext[0])) 
+    # tracé de l'étrave extérieure
+    id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_ext[0], id_extremites_tribord_ext[1], id_segmt, 1))
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord_ext[0], id_extremites_babord_ext[1], id_segmt, 2))
+  # si largeur d'étrave nulle
+  else :
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_ext[0], id_extremites_tribord_ext[1], id_extremites_babord_ext[0], id_extremites_babord_ext[1]))
+
+
+  # tracé des courbes tribord et babord intérieures
+  id_extremites_tribord_int = trace_courbe (esq, abscisses_etrave_poupe_int, ordonnees_int)
+  id_extremites_babord_int = trace_courbe (esq, abscisses_etrave_poupe_int, -ordonnees_int)
+
+  # contraitnes sur les extrémités d'étrave intérieure
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_tribord_int[0],id_extremites_tribord_int[1],abscisses_etrave_poupe_int[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_tribord_int[0],id_extremites_tribord_int[1],ordonnees_int[0]))
+  # si largeur d'étrave intérieure non nulle, ajout d'une encoche
+  if ordonnees_int[0] != 0 :
+    esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_babord_int[0],id_extremites_babord_int[1],abscisses_etrave_poupe_int[0])) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_babord_int[0],id_extremites_babord_int[1],-ordonnees_int[0])) 
+    # tracé de l'étrave avec encoche
+    id_segmt_1 = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    id_segmt_2 = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    id_segmt_3 = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    id_segmt_4 = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    id_segmt_5 = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_int[0], id_extremites_tribord_int[1], id_segmt_1, 1))
+    esq.addConstraint(Sketcher.Constraint('DistanceX', id_segmt_1, 2, abscisses_etrave_poupe_int[0])) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY', id_segmt_1, 2, epaisseur_bois/2.0)) 
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt_1, 2, id_segmt_2, 1))
+    esq.addConstraint(Sketcher.Constraint('DistanceX', id_segmt_2, 2, abscisses_etrave_poupe_int[0]-profondeur_encoche_etrave)) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY', id_segmt_2, 2, epaisseur_bois/2.0)) 
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt_2, 2, id_segmt_3, 1))
+    esq.addConstraint(Sketcher.Constraint('DistanceX',id_segmt_3, 2, abscisses_etrave_poupe_int[0]-profondeur_encoche_etrave)) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY',id_segmt_3, 2, -epaisseur_bois/2.0)) 
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt_3, 2, id_segmt_4, 1))
+    esq.addConstraint(Sketcher.Constraint('DistanceX',id_segmt_4,2,abscisses_etrave_poupe_int[0])) 
+    esq.addConstraint(Sketcher.Constraint('DistanceY',id_segmt_4,2,-epaisseur_bois/2.0)) 
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt_4, 2, id_segmt_5, 1))
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord_int[0], id_extremites_babord_int[1], id_segmt_5, 2))
+  # si largeur d'étrave intérieure nulle
+  else :
+    esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_int[0], id_extremites_tribord_int[1], id_extremites_babord_int[0], id_extremites_babord_int[1]))
+
+  # tracé de la poupe
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_ext[2], id_extremites_tribord_ext[3], id_segmt, 1))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord_int[2], id_extremites_tribord_int[3], id_segmt, 2))
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord_ext[2], id_extremites_babord_ext[3], id_segmt, 1))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord_int[2], id_extremites_babord_int[3], id_segmt, 2))
+
+  return 0
+
+
+
+
+# Fonction de calcul des ordonnées de la quille en fonction du vecteur d'abscisses transmis en argument
+# Fonction C1 par morceaux d'équations a*x**2+b*x+c sur [x1, (x1+x2)/2], [(x1+x2)/2, x2] [x2, (x2+x3)/2], [(x2+x3)/2, x3] (x1 = étrave, x2 = max profondeur, x3 = poupe)
+# Cf. tableau calculs carène
+# Renvoi du vecteur des ordonnées
+def ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_etrave, profondeur_max, profondeur_poupe, angle_etrave, angle_profondeur_max, angle_poupe, position_jonction_etrave, profondeur_jonction_etrave, x) :
+
+  # point d'étrave
+  x1 = 0.0
+  y1 = hauteur_etrave
+  # point du max profondeur
+  x2 = x1 + position_max_profondeur_etrave
+  y2 = -profondeur_max
+  # point de poupe
+  x3 = x1 + longueur_etrave_poupe
+  y3 = -profondeur_poupe
+
+  # point de jonction étrave
+  x12 = x1 + position_jonction_etrave
+  if profondeur_jonction_etrave is not None :
+    y12 = -profondeur_jonction_etrave
+  else :
+    y12 = None
+
+  # point de jonction poupe
+  x23 = x1 + 0.75*longueur_etrave_poupe
+  y23 = None
+
+  tan1 = math.tan( angle_etrave / 180.0 * math.pi )
+  tan2 = math.tan( angle_profondeur_max / 180.0 * math.pi )
+  tan3 = math.tan( angle_poupe / 180.0 * math.pi )
+
+  d12a = x12 - x1
+  d12b = x12 - x2
+  d23a = x23 - x2
+  d23b = x23 - x3
+
+  if y12 is None :
+    # pas de cassure (dérivée continue à la jonction)
+    K12 = (-tan1 + tan2)/2.0
+    L12 = -y1 + y2 - d12a * tan1 + d12b * tan2
+    a12a = (d12b*K12-L12) / (d12a*d12b - d12a**2)
+    a12b = (d12a*K12-L12) / (d12b**2 - d12a*d12b)
+    b12a = tan1 - 2*x1*a12a
+    b12b = tan2 - 2*x2*a12b
+  else :
+    # point de jonction fixé = cassure
+    a12a = (y12 - y1) / (d12a**2) - tan1 / d12a
+    a12b = (y12 - y2) / (d12b**2) - tan2 / d12b
+    b12a = (x12 + x1) / d12a * tan1 - 2 * x1 * (y12 - y1) / (d12a**2)
+    b12b = (x12 + x2) / d12b * tan2 - 2 * x2 * (y12 - y2) / (d12b**2)
+
+  if y23 is None :
+    # pas de cassure (dérivée continue à la jonction)
+    K23 = (-tan2 + tan3)/2.0
+    L23 = -y2 + y3 - d23a * tan2 + d23b * tan3
+    a23a = (d23b*K23-L23) / (d23a*d23b - d23a**2)
+    a23b = (d23a*K23-L23) / (d23b**2 - d23a*d23b)
+    b23a = tan2 - 2*x2*a23a
+    b23b = tan3 - 2*x3*a23b
+  else :
+    # point de jonction fixé = cassure
+    a23a = (y23 - y2) / (d23a**2) - tan2 / d23a
+    a23b = (y23 - y3) / (d32b**2) - tan3 / d23b
+    b23a = (x23 + x2) / d23a * tan2 - 2 * x2 * (y23 - y2) / (d23a**2)
+    b23b = (x23 + x3) / d23b * tan3 - 2 * x3 * (y23 - y3) / (d23b**2)
+
+  c12a = y1 - a12a*x1**2 - b12a*x1
+  c12b = y2 - a12b*x2**2 - b12b*x2
+  c23a = y2 - a23a*x2**2 - b23a*x2
+  c23b = y3 - a23b*x3**2 - b23b*x3
+
+  # vecteur des ordonnées
+  a = ((x >= x1) & (x <= x12)) * a12a + ((x > x12) & (x <= x2)) * a12b + ((x > x2) & (x <= x23)) * a23a + ((x > x23) & (x <= x3)) * a23b
+  b = ((x >= x1) & (x <= x12)) * b12a + ((x > x12) & (x <= x2)) * b12b + ((x > x2) & (x <= x23)) * b23a + ((x > x23) & (x <= x3)) * b23b
+  c = ((x >= x1) & (x <= x12)) * c12a + ((x > x12) & (x <= x2)) * c12b + ((x > x2) & (x <= x23)) * c23a + ((x > x23) & (x <= x3)) * c23b
+  y = a*x**2 + b*x + c
+
+  return y
+
+
+
+
+# Fonction de tracé de l'esquisse de quille
+# constituée de deux courbes, externe et interne
+# Positionnement des encoches
+def trace_esq_quille (position_etrave, longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, tang_angle_pont_etrave_poupe, epaisseur_etrave, epaisseur_quille, positions_couples_etrave, positions_puits_derive, hauteur_puits_derive, profondeur_encoche_etrave, profondeur_encoches_couples, largeur_encoches) :
+
+  # création et positionnement de l'esquisse
+  esq_etrave = App.ActiveDocument.addObject('Sketcher::SketchObject','Quille_etrave')
+  esq_etrave.Placement = App.Placement(App.Vector(0.000000, position_etrave, 0.0), App.Rotation(90.0, 0.0, 90.0))
+  # création et positionnement de l'esquisse
+  esq_poupe = App.ActiveDocument.addObject('Sketcher::SketchObject','Quille_poupe')
+  esq_poupe.Placement = App.Placement(App.Vector(0.000000, position_etrave, 0.0), App.Rotation(90.0, 0.0, 90.0))
+
+
+  # nombre de segments à tracer entre 2 couples
+  nb_segments_entre_couples = 5
+
+  # vecteur des abscisses du tracé extérieur: point d'étrave et ajout de nb_segments_entre_couples points entre chaque couple
+  abscisses_etrave_poupe_ext = numpy.array([0.0])
+  # vecteur des abscisses du tracé intérieur: point d'étrave intérieur puis même suite que pour le tracé extérieur, avec insertion de 4 points d'encoches au niveau de chaque couple
+  abscisses_etrave_poupe_int = numpy.array([0.0+epaisseur_etrave])
+  # vecteur des abscisses d'encoches
+  id_fond_encoches = numpy.array([0])
+  abscisses_fond_encoches = numpy.array([0.0])
+
+  precedente_position = abscisses_etrave_poupe_ext[0]
+  for position in positions_couples_etrave :
+    if position > precedente_position :
+      for i in range (nb_segments_entre_couples) :
+        abscisses_etrave_poupe_ext = numpy.append( abscisses_etrave_poupe_ext, precedente_position + (i+1) * (position - precedente_position) / nb_segments_entre_couples )
+        if abscisses_etrave_poupe_ext[-1] > (0.0+epaisseur_etrave) :
+          abscisses_etrave_poupe_int = numpy.append( abscisses_etrave_poupe_int, abscisses_etrave_poupe_ext[-1])
+          id_fond_encoches = numpy.append( id_fond_encoches, 0)
+          abscisses_fond_encoches = numpy.append( abscisses_fond_encoches, 0.0)
+      if abscisses_etrave_poupe_ext[-1] > (0.0+epaisseur_etrave) :
+        # ajout d'une encoche au niveau du couple (composee de 4 points)
+        abscisses_etrave_poupe_int[-1] = abscisses_etrave_poupe_ext[-1] - largeur_encoches/2.0
+        abscisses_etrave_poupe_int = numpy.append( abscisses_etrave_poupe_int, [(abscisses_etrave_poupe_ext[-1] - largeur_encoches/2.0), (abscisses_etrave_poupe_ext[-1] + largeur_encoches/2.0), (abscisses_etrave_poupe_ext[-1] + largeur_encoches/2.0)] )
+        id_fond_encoches = numpy.append(id_fond_encoches, [1, 1, 0]) 
+        abscisses_fond_encoches = numpy.append( abscisses_fond_encoches, [abscisses_etrave_poupe_ext[-1], abscisses_etrave_poupe_ext[-1], 0.0])
+    precedente_position = position
+
+  # correction de l'encoche de poupe = demi-encoche
+  abscisses_etrave_poupe_int[-2] = abscisses_etrave_poupe_int[-2] - largeur_encoches/2.0
+  abscisses_etrave_poupe_int = numpy.delete( abscisses_etrave_poupe_int, -1 )
+  id_fond_encoches = numpy.delete( id_fond_encoches, -1 )
+  abscisses_fond_encoches = numpy.delete( abscisses_fond_encoches, -1 )
+
+
+  # sous-vecteurs de l'étrave au puits de dérive
+  abscisses_etrave_derive_int = abscisses_etrave_poupe_int[ abscisses_etrave_poupe_int <= positions_puits_derive[0] ]
+  id_fond_encoches_etrave_derive = id_fond_encoches[ abscisses_etrave_poupe_int <= positions_puits_derive[0] ]
+  abscisses_fond_encoches_etrave_derive = abscisses_fond_encoches[ abscisses_etrave_poupe_int <= positions_puits_derive[0] ]
+  # si besoin ajout du point au puit de dérive
+  if abscisses_etrave_derive_int[-1] < positions_puits_derive[0] :
+    abscisses_etrave_derive_int = numpy.append( abscisses_etrave_derive_int, positions_puits_derive[0] )
+    id_fond_encoches_etrave_derive = numpy.append( id_fond_encoches_etrave_derive, 0)
+    abscisses_fond_encoches_etrave_derive = numpy.append( abscisses_fond_encoches_etrave_derive, 0.0 )
+
+  abscisses_etrave_derive_ext = abscisses_etrave_poupe_ext[ abscisses_etrave_poupe_ext <= positions_puits_derive[1] ]
+  # si besoin ajout du point au puit de dérive
+  if abscisses_etrave_derive_ext[-1] < positions_puits_derive[1] :
+    abscisses_etrave_derive_ext = numpy.append( abscisses_etrave_derive_ext, positions_puits_derive[1] )
+
+  # sous-vecteurs du puits de dérive à la poupe
+  abscisses_derive_poupe_int = abscisses_etrave_poupe_int[ abscisses_etrave_poupe_int >= positions_puits_derive[3] ]
+  id_fond_encoches_derive_poupe = id_fond_encoches[ abscisses_etrave_poupe_int >= positions_puits_derive[3] ]
+  abscisses_fond_encoches_derive_poupe = abscisses_fond_encoches[ abscisses_etrave_poupe_int >= positions_puits_derive[3] ]
+  # si besoin insertion du point au puit de dérive
+  if abscisses_derive_poupe_int[0] > positions_puits_derive[3] :
+    abscisses_derive_poupe_int = numpy.insert( abscisses_derive_poupe_int, 0, positions_puits_derive[3] )
+    id_fond_encoches_derive_poupe = numpy.insert( id_fond_encoches_derive_poupe, 0, 0)
+    abscisses_fond_encoches_derive_poupe = numpy.insert( abscisses_fond_encoches_derive_poupe, 0, 0.0 )
+
+  abscisses_derive_poupe_ext = abscisses_etrave_poupe_ext[ abscisses_etrave_poupe_ext >= positions_puits_derive[2] ]
+  # si besoin ajout du point au puit de dérive
+  if abscisses_derive_poupe_ext[0] > positions_puits_derive[2] :
+    abscisses_derive_poupe_ext = numpy.insert( abscisses_derive_poupe_ext, 0, positions_puits_derive[2] )
+
+
+
+  # vecteurs des ordonnées de l'étrave au puits de dérive
+  ordonnees_quille_etrave_derive_ext = ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - largeur_encoches/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, abscisses_etrave_derive_ext)
+  ordonnees_quille_etrave_derive_int = ordonnees_quille (longueur_etrave_poupe - epaisseur_etrave, position_max_profondeur_etrave, (hauteur_pont_etrave - tang_angle_pont_etrave_poupe * epaisseur_etrave - largeur_encoches/2.0), profondeur_max - epaisseur_quille, profondeur_poupe - epaisseur_quille, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave , profondeur_jonction_etrave - epaisseur_quille, abscisses_etrave_derive_int - epaisseur_etrave)
+  # correction des ordonnées aux encoches
+  ordonnees_ref_fond_encoches_etrave_derive = ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - largeur_encoches/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, abscisses_fond_encoches_etrave_derive)
+  ordonnees_quille_etrave_derive_int = ordonnees_quille_etrave_derive_int * (1 - id_fond_encoches_etrave_derive) + (ordonnees_ref_fond_encoches_etrave_derive + profondeur_encoches_couples) * id_fond_encoches_etrave_derive
+
+  # vecteurs des ordonnées du puits de dérive à la poupe
+  ordonnees_quille_derive_poupe_ext = ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - largeur_encoches/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, abscisses_derive_poupe_ext)
+  ordonnees_quille_derive_poupe_int = ordonnees_quille (longueur_etrave_poupe - epaisseur_etrave, position_max_profondeur_etrave, (hauteur_pont_etrave - tang_angle_pont_etrave_poupe * epaisseur_etrave - largeur_encoches/2.0), profondeur_max - epaisseur_quille, profondeur_poupe - epaisseur_quille, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave , profondeur_jonction_etrave - epaisseur_quille, abscisses_derive_poupe_int - epaisseur_etrave)
+  # correction des ordonnées aux encoches
+  ordonnees_ref_fond_encoches_derive_poupe = ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - largeur_encoches/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, abscisses_fond_encoches_derive_poupe)
+  ordonnees_quille_derive_poupe_int = ordonnees_quille_derive_poupe_int * (1 - id_fond_encoches_derive_poupe) + (ordonnees_ref_fond_encoches_derive_poupe + profondeur_encoches_couples) * id_fond_encoches_derive_poupe
+
+  # remontées du puits de dérive
+  abscisses_etrave_derive_ext = numpy.append( abscisses_etrave_derive_ext, abscisses_etrave_derive_ext[-1] )
+  ordonnees_quille_etrave_derive_ext = numpy.append( ordonnees_quille_etrave_derive_ext, [hauteur_puits_derive] )
+
+  abscisses_etrave_derive_int = numpy.append( abscisses_etrave_derive_int, abscisses_etrave_derive_int[-1] )
+  ordonnees_quille_etrave_derive_int = numpy.append( ordonnees_quille_etrave_derive_int, [hauteur_puits_derive] )
+
+  abscisses_derive_poupe_ext = numpy.insert( abscisses_derive_poupe_ext, 0, abscisses_derive_poupe_ext[0] )
+  ordonnees_quille_derive_poupe_ext = numpy.insert( ordonnees_quille_derive_poupe_ext, 0, [hauteur_puits_derive] )
+
+  abscisses_derive_poupe_int = numpy.insert( abscisses_derive_poupe_int, 0, abscisses_derive_poupe_int[0] )
+  ordonnees_quille_derive_poupe_int = numpy.insert( ordonnees_quille_derive_poupe_int, 0, [hauteur_puits_derive] )
+
+
+  # tracés
+  id_extremites_etrave_derive_ext = trace_courbe (esq_etrave, abscisses_etrave_derive_ext, ordonnees_quille_etrave_derive_ext)
+  id_extremites_etrave_derive_int = trace_courbe (esq_etrave, abscisses_etrave_derive_int, ordonnees_quille_etrave_derive_int)
+  id_extremites_derive_poupe_ext = trace_courbe (esq_poupe, abscisses_derive_poupe_ext, ordonnees_quille_derive_poupe_ext)
+  id_extremites_derive_poupe_int = trace_courbe (esq_poupe, abscisses_derive_poupe_int, ordonnees_quille_derive_poupe_int)
+
+
+  # contraitnes sur les extrémités d'étrave
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_etrave_derive_ext[0], id_extremites_etrave_derive_ext[1], abscisses_etrave_derive_ext[0] )) 
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_etrave_derive_ext[0], id_extremites_etrave_derive_ext[1], ordonnees_quille_etrave_derive_ext[0] ))
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_etrave_derive_int[0], id_extremites_etrave_derive_int[1], abscisses_etrave_derive_int[0] )) 
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_etrave_derive_int[0], id_extremites_etrave_derive_int[1], ordonnees_quille_etrave_derive_int[0] ))
+  # tracé de l'étrave
+  id_etrave_1 = esq_etrave.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  id_etrave_2 = esq_etrave.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  id_etrave_3 = esq_etrave.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  id_etrave_4 = esq_etrave.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_extremites_etrave_derive_ext[0], id_extremites_etrave_derive_ext[1], id_etrave_1, 1))
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceX', id_etrave_1, 2, epaisseur_etrave - profondeur_encoche_etrave)) 
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceY', id_etrave_1, 2, hauteur_pont_etrave - largeur_encoches/2.0 - tang_angle_pont_etrave_poupe * (epaisseur_etrave - profondeur_encoche_etrave) )) 
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_etrave_1, 2, id_etrave_2, 1))
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceX', id_etrave_2, 2, epaisseur_etrave - profondeur_encoche_etrave))  
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceY', id_etrave_2, 2, hauteur_pont_etrave - largeur_encoches/2.0 - tang_angle_pont_etrave_poupe * (epaisseur_etrave - profondeur_encoche_etrave) + largeur_encoches )) 
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_etrave_2, 2, id_etrave_3, 1))
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceX', id_etrave_3, 2, epaisseur_etrave))  
+  esq_etrave.addConstraint(Sketcher.Constraint('DistanceY', id_etrave_3, 2, hauteur_pont_etrave - largeur_encoches/2.0 - tang_angle_pont_etrave_poupe * epaisseur_etrave + largeur_encoches )) 
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_etrave_3, 2, id_etrave_4, 1))
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_extremites_etrave_derive_int[0], id_extremites_etrave_derive_int[1], id_etrave_4, 2))
+
+  # tracé de la poupe
+  id_poupe = esq_poupe.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_poupe.addConstraint(Sketcher.Constraint('Coincident', id_extremites_derive_poupe_ext[2], id_extremites_derive_poupe_ext[3], id_poupe, 1))
+  esq_poupe.addConstraint(Sketcher.Constraint('Coincident', id_extremites_derive_poupe_int[2], id_extremites_derive_poupe_int[3], id_poupe, 2))
+
+  # tracé du puits de dérive
+  id_puits_1 = esq_etrave.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_extremites_etrave_derive_ext[2], id_extremites_etrave_derive_ext[3], id_puits_1, 1))
+  esq_etrave.addConstraint(Sketcher.Constraint('Coincident', id_extremites_etrave_derive_int[2], id_extremites_etrave_derive_int[3], id_puits_1, 2))
+  id_puits_2 = esq_poupe.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_poupe.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_derive_poupe_ext[0], id_extremites_derive_poupe_ext[1], abscisses_derive_poupe_ext[0] )) 
+  esq_poupe.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_derive_poupe_ext[0], id_extremites_derive_poupe_ext[1], ordonnees_quille_derive_poupe_ext[0] ))
+  esq_poupe.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_derive_poupe_int[0], id_extremites_derive_poupe_int[1], abscisses_derive_poupe_int[0]  )) 
+  esq_poupe.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_derive_poupe_int[0], id_extremites_derive_poupe_int[1], ordonnees_quille_derive_poupe_int[0] ))
+  esq_poupe.addConstraint(Sketcher.Constraint('Coincident', id_extremites_derive_poupe_ext[0], id_extremites_derive_poupe_ext[1], id_puits_2, 1))
+  esq_poupe.addConstraint(Sketcher.Constraint('Coincident', id_extremites_derive_poupe_int[0], id_extremites_derive_poupe_int[1], id_puits_2, 2))
+
+  return 0
+
+
+
+
+# Fonction de tracé des esquisses tribord et babord du puits de dérive
+# constituée de
+def trace_esq_puits_derive (position_etrave, longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, tang_angle_pont_etrave_poupe, epaisseur_etrave, epaisseur_quille, positions_puits_derive, hauteur_puits_derive, demi_ecartement_puits_derive, profondeur_encoches, largeur_encoches) :
+
+  # création et positionnement des esquisses
+  esq_t = App.ActiveDocument.addObject('Sketcher::SketchObject','Puits_derive_tribord')
+  esq_t.Placement = App.Placement(App.Vector(demi_ecartement_puits_derive, position_etrave, 0.0), App.Rotation(90.0, 0.0, 90.0))
+
+  esq_b = App.ActiveDocument.addObject('Sketcher::SketchObject','Puits_derive_babord')
+  esq_b.Placement = App.Placement(App.Vector(-demi_ecartement_puits_derive, position_etrave, 0.0), App.Rotation(90.0, 0.0, 90.0))
+
+  # nombre de segments à tracer pour les courbes de quille
+  nb_segments_quille = 5
+
+  # vecteur des abscisses
+  abscisses_ext = numpy.array([positions_puits_derive[0]])
+#  abscisses_int = numpy.array([positions_puits_derive[1]])
+  for i in range (nb_segments_quille) :
+    abscisses_ext = numpy.append( abscisses_ext, positions_puits_derive[0] + (i+1) * (positions_puits_derive[3] - positions_puits_derive[0]) / nb_segments_quille )
+#    abscisses_int = numpy.append( abscisses_int, positions_puits_derive[1] + (i+1) * (positions_puits_derive[2] - positions_puits_derive[1]) / nb_segments_quille )
+
+  # vecteur des ordonnées de quille
+  ordonnees_quille_derive_ext = ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - largeur_encoches/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, abscisses_ext)
+#  ordonnees_quille_derive_int = ordonnees_quille (longueur_etrave_poupe - epaisseur_etrave, position_max_profondeur_etrave, (hauteur_pont_etrave - tang_angle_pont_etrave_poupe * epaisseur_etrave + largeur_encoches/2.0), profondeur_max - epaisseur_quille, profondeur_poupe - epaisseur_quille, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave , profondeur_jonction_etrave - epaisseur_quille, abscisses_int - epaisseur_etrave)
+
+  # remontée du puits de dérive
+  abscisses_ext = numpy.insert( abscisses_ext, 0, abscisses_ext[0] )
+  ordonnees_quille_derive_ext = numpy.insert( ordonnees_quille_derive_ext, 0, [hauteur_puits_derive] )
+  abscisses_ext = numpy.append( abscisses_ext, abscisses_ext[-1] )
+  ordonnees_quille_derive_ext = numpy.append( ordonnees_quille_derive_ext, [hauteur_puits_derive] )
+#  abscisses_int = numpy.insert( abscisses_int, 0, abscisses_int[0] )
+#  ordonnees_quille_derive_int = numpy.insert( ordonnees_quille_derive_int, 0, [hauteur_puits_derive] )
+#  abscisses_int = numpy.append( abscisses_int, abscisses_int[-1] )
+#  ordonnees_quille_derive_int = numpy.append( ordonnees_quille_derive_int, [hauteur_puits_derive] )
+
+  # tracés
+  id_extremites_tribord = trace_courbe (esq_t, abscisses_ext, ordonnees_quille_derive_ext)
+  id_extremites_babord = trace_courbe (esq_b, abscisses_ext, ordonnees_quille_derive_ext)
+
+  # contraintes sur les extrémités d'étrave
+  esq_t.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_tribord[0], id_extremites_tribord[1], abscisses_ext[0] )) 
+  esq_t.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_tribord[0], id_extremites_tribord[1], ordonnees_quille_derive_ext[0] ))
+  # jonction pour fermer la courbe
+  id_segmt = esq_t.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_t.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord[0], id_extremites_tribord[1], id_segmt, 1))
+  esq_t.addConstraint(Sketcher.Constraint('Coincident', id_extremites_tribord[2], id_extremites_tribord[3], id_segmt, 2))
+
+  # contraintes sur les extrémités d'étrave
+  esq_b.addConstraint(Sketcher.Constraint('DistanceX', id_extremites_babord[0], id_extremites_babord[1], abscisses_ext[0] )) 
+  esq_b.addConstraint(Sketcher.Constraint('DistanceY', id_extremites_babord[0], id_extremites_babord[1], ordonnees_quille_derive_ext[0] ))
+  # jonction pour fermer la courbe
+  id_segmt = esq_b.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_b.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord[0], id_extremites_babord[1], id_segmt, 1))
+  esq_b.addConstraint(Sketcher.Constraint('Coincident', id_extremites_babord[2], id_extremites_babord[3], id_segmt, 2))
+
+  
+  return 0
+
+
+
+
+# Fonction de calcul de la courbe du couple d'équation y = a*x**2 + c
+# (y=0 correspond à la ligne de flottaison)
+# Ajout d'une encoche à la quille si est_ext = "1" et ajutement de la hauteur en prévision de l'encoche du pont
+# Renvoi des indexes des extrémités
+def courbe_demi_couple (profondeur_couple, hauteur_couple, demi_largeur_couple, epaisseur_demi_encoche_quille, epaisseur_encoche_pont, profondeur_cale = None) :
+
+  # équation de la courbe de couple: y = a*x**2 + b*x +c
+  a = (profondeur_couple + hauteur_couple) / (demi_largeur_couple**2)
+  b=0.000000
+  c=-profondeur_couple
+
+  if profondeur_cale is not None and (profondeur_cale < profondeur_couple) :
+    x_min = math.sqrt( (-profondeur_cale - c) / a )
+  else :
+    x_min = epaisseur_demi_encoche_quille
+
+  x_max = math.sqrt( (hauteur_couple - epaisseur_encoche_pont - c) / a )  
+
+  # nombre de segments pour le tracé d'un demi-couple
+  # = longueur courbe / 5mm, arrondi à l'entier supérieur
+  # longueur courbe = intégrale entre x_min et x_max de racine(1+(2ax)²)
+  # càd [x/2*racine(1+(2ax)²) + 1/(4a)*ln(2ax+racine(1+(2ax)²))]
+  nb_segments = int(math.ceil( (x_max/2.0*math.sqrt(1.0+(2.0*a*x_max)**2) + 1.0/(4.0*a)*math.log(2.0*a*x_max+math.sqrt(1.0+(2.0*a*x_max)**2)) - x_min/2.0*math.sqrt(1.0+(2.0*a*x_min)**2) + 1.0/(4.0*a)*math.log(2.0*a*x_min+math.sqrt(1.0+(2.0*a*x_min)**2))) / 5.0))
+  #nb_segments = 20
+
+  pas = ( x_max - x_min ) / nb_segments
+  x = numpy.array([x_min])
+  for i in range(nb_segments) :
+    x = numpy.append(x, x[0] + (i+1) * pas)
+  y = a*x**2 + b*x + c
+
+  return [x, y]
+
+
+
+
+
+
+# Fonction de tracé de l'esquisse du couple n°"id"
+# placée à "position" de l'étrave,
+# composée d'une courbe de coque externe et d'une courbe de coque interne espacées d'"epaisseur_couple", reliées par l'encoche du pont
+def trace_esq_couple (id, position_couple, type_couple, profondeur_couple, hauteur_couple, demi_largeur_couple, epaisseur_couple, epaisseur_puits_derive, profondeur_cale, profondeur_encoches_quille, profondeur_encoches_bord, epaisseur_bauquiere, epaisseur_bois_armature, epaisseur_joint_capot) :
+
+  # si présence d'un puits de dérive, création et positionnement de deux esquisses
+  if type_couple == 1 :
+    esq_babord = App.ActiveDocument.addObject('Sketcher::SketchObject','Couple_{:03d}_babord'.format(id))
+    esq_babord.Placement = App.Placement(App.Vector(0.000000, position_couple, 0.000000), App.Rotation(1.000000,0.000000,0.000000,1.000000))
+    esq_tribord = App.ActiveDocument.addObject('Sketcher::SketchObject','Couple_{:03d}_tribord'.format(id))
+    esq_tribord.Placement = App.Placement(App.Vector(0.000000, position_couple, 0.000000), App.Rotation(1.000000,0.000000,0.000000,1.000000))
+  # sinon, création et positionnement d'une seule esquisse
+  else :
+    esq_babord = App.ActiveDocument.addObject('Sketcher::SketchObject','Couple_{:03d}'.format(id))
+    esq_babord.Placement = App.Placement(App.Vector(0.000000, position_couple, 0.000000), App.Rotation(1.000000,0.000000,0.000000,1.000000))
+    esq_tribord = esq_babord
+
+
+  # demi-écartement à la quille en fonction de la présence du puits de dérive ou non
+  if type_couple == 1 :
+    epaisseur_demi_encoche_quille = epaisseur_puits_derive/2.0
+  else :
+    epaisseur_demi_encoche_quille = epaisseur_bois_armature/2.0
+
+
+  # tracé des courbes extérieures du couple (quille à pont)
+  # diminution de l'ordonnée au pont d'une demi-épaisseur d'encoche
+  [x_ext,y_ext] = courbe_demi_couple (profondeur_couple, hauteur_couple, demi_largeur_couple, epaisseur_demi_encoche_quille, epaisseur_bois_armature/2.0, None)
+  id_extremites_ext_babord = trace_courbe (esq_babord, x_ext, y_ext)
+  id_extremites_ext_tribord = trace_courbe (esq_tribord, -x_ext, y_ext)
+
+  # contraitnes sur les extrémités au nive	au de la quille
+  esq_babord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_ext_babord[0],id_extremites_ext_babord[1],x_ext[0])) 
+  esq_babord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_ext_babord[0],id_extremites_ext_babord[1],y_ext[0])) 
+  esq_tribord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_ext_tribord[0],id_extremites_ext_tribord[1],-x_ext[0])) 
+  esq_tribord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_ext_tribord[0],id_extremites_ext_tribord[1],y_ext[0])) 
+
+
+  # Si couple de poupe: pas de courbe intérieure, seulement un point de poupe
+  if type_couple == 2 :
+    id_poupe = esq_babord.addGeometry(Part.Point( App.Vector ( 1 , 1 , 0 ) ))
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceX', id_poupe, 1, 0.0)) 
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceY', id_poupe, 1, hauteur_couple - (1.5*epaisseur_bois_armature + epaisseur_joint_capot))) 
+    id_extremites_int_babord = [id_poupe, 1, id_poupe, 1]
+    id_extremites_int_tribord = [id_poupe, 1, id_poupe, 1]
+
+  # tracé des courbes intérieures du couple (quille à pont)
+  # diminution de l'ordonnée au pont: 1/2 épaisseur pour capot + 1 épaisseur pour la bauquiere + épaisseur du joint
+  elif type_couple == 1 :
+    # pas de cale si puits de dérive
+    [x_int,y_int] = courbe_demi_couple (profondeur_couple - epaisseur_couple, hauteur_couple, demi_largeur_couple - epaisseur_couple, epaisseur_demi_encoche_quille, (1.5*epaisseur_bois_armature + epaisseur_joint_capot), None)
+    id_extremites_int_babord = trace_courbe (esq_babord, x_int, y_int)
+    id_extremites_int_tribord = trace_courbe (esq_tribord, -x_int, y_int)
+  else :
+    [x_int,y_int] = courbe_demi_couple (profondeur_couple - epaisseur_couple, hauteur_couple, demi_largeur_couple - epaisseur_couple, epaisseur_demi_encoche_quille, (1.5*epaisseur_bois_armature + epaisseur_joint_capot), profondeur_cale)
+    id_extremites_int_babord = trace_courbe (esq_babord, x_int, y_int)
+    id_extremites_int_tribord = trace_courbe (esq_tribord, -x_int, y_int)
+
+
+  # si présence d'un puits de dérive
+  if type_couple == 1 :
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_int_babord[0],id_extremites_int_babord[1],x_int[0])) 
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_int_babord[0],id_extremites_int_babord[1],y_int[0])) 
+    esq_tribord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_int_tribord[0],id_extremites_int_tribord[1],-x_int[0])) 
+    esq_tribord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_int_tribord[0],id_extremites_int_tribord[1],y_int[0])) 
+    id_bord_puits = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_babord[0], id_extremites_ext_babord[1], id_bord_puits, 1))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_babord[0], id_extremites_int_babord[1], id_bord_puits, 2))
+    id_bord_puits = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_tribord[0], id_extremites_ext_tribord[1], id_bord_puits, 1))
+    esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_tribord[0], id_extremites_int_tribord[1], id_bord_puits, 2))
+
+  # sinon ajouter l'encoche de quille
+  else :
+    id_enc1 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_babord[0], id_extremites_ext_babord[1], id_enc1, 1))
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceX', id_enc1, 2, x_ext[0])) 
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceY', id_enc1, 2, -profondeur_couple + profondeur_encoches_quille)) 
+    id_enc2 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_tribord[0], id_extremites_ext_tribord[1], id_enc2, 1))
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceX', id_enc2, 2, -x_ext[0])) 
+    esq_babord.addConstraint(Sketcher.Constraint('DistanceY', id_enc2, 2, -profondeur_couple + profondeur_encoches_quille)) 
+    id_enc3 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc1, 2, id_enc3, 1))
+    esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc2, 2, id_enc3, 2))
+
+
+  # si pas de puits de dérive ni poupe
+  if type_couple == 0 :
+    # si la profondeur du couple dépasse la profondeur de cale, tracer le fond de cale
+    if profondeur_cale is not None and (profondeur_cale < profondeur_couple) :
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_int_babord[0],id_extremites_int_babord[1],x_int[0])) 
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_int_babord[0],id_extremites_int_babord[1],y_int[0])) 
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_int_tribord[0],id_extremites_int_tribord[1],-x_int[0])) 
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_int_tribord[0],id_extremites_int_tribord[1],y_int[0])) 
+      id_cale = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+      esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_babord[0], id_extremites_int_babord[1], id_cale, 1))
+      esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_tribord[0], id_extremites_int_tribord[1], id_cale, 2))
+    # sinon 
+    else :
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_int_babord[0],id_extremites_int_babord[1],x_int[0])) 
+      esq_babord.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_int_babord[0],id_extremites_int_babord[1],y_int[0])) 
+      esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_babord[0], id_extremites_int_babord[1], id_extremites_int_tribord[0], id_extremites_int_tribord[1]))
+
+  # tracé des encoches du pont
+  # babord
+  id_enc1 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_babord[2], id_extremites_int_babord[3], id_enc1, 1))
+  esq_babord.addConstraint(Sketcher.Constraint('Horizontal', id_enc1)) 
+  esq_babord.addConstraint(Sketcher.Constraint('DistanceX', id_enc1, 2, (demi_largeur_couple - epaisseur_couple + epaisseur_bauquiere)))
+  id_enc2 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc1, 2, id_enc2, 1))
+  esq_babord.addConstraint(Sketcher.Constraint('Vertical', id_enc2)) 
+  esq_babord.addConstraint(Sketcher.Constraint('DistanceY', id_enc2, 2, hauteur_couple+epaisseur_bois_armature/2.0)) 
+  id_enc3 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc2, 2, id_enc3, 1))
+  esq_babord.addConstraint(Sketcher.Constraint('Horizontal',id_enc3)) 
+  esq_babord.addConstraint(Sketcher.Constraint('DistanceX', id_enc3, profondeur_encoches_bord))
+  id_enc4 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc3, 2, id_enc4, 1))
+  esq_babord.addConstraint(Sketcher.Constraint('Vertical', id_enc4)) 
+  id_enc5 = esq_babord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_enc4, 2, id_enc5, 1))
+  esq_babord.addConstraint(Sketcher.Constraint('Horizontal',id_enc5)) 
+  esq_babord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_babord[2], id_extremites_ext_babord[3], id_enc5, 2))
+  # tribord
+  id_enc1 = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_int_tribord[2], id_extremites_int_tribord[3], id_enc1, 1))
+  esq_tribord.addConstraint(Sketcher.Constraint('Horizontal', id_enc1)) 
+  esq_tribord.addConstraint(Sketcher.Constraint('DistanceX', id_enc1, 2, -(demi_largeur_couple - epaisseur_couple + epaisseur_bauquiere)))
+  id_enc2 = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_enc1, 2, id_enc2, 1))
+  esq_tribord.addConstraint(Sketcher.Constraint('Vertical', id_enc2)) 
+  esq_tribord.addConstraint(Sketcher.Constraint('DistanceY', id_enc2, 2, hauteur_couple+epaisseur_bois_armature/2.0)) 
+  id_enc3 = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_enc2, 2, id_enc3, 1))
+  esq_tribord.addConstraint(Sketcher.Constraint('Horizontal',id_enc3)) 
+  esq_tribord.addConstraint(Sketcher.Constraint('DistanceX', id_enc3, -profondeur_encoches_bord))
+  id_enc4 = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_enc3, 2, id_enc4, 1))
+  esq_tribord.addConstraint(Sketcher.Constraint('Vertical', id_enc4)) 
+  id_enc5 = esq_tribord.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_enc4, 2, id_enc5, 1))
+  esq_tribord.addConstraint(Sketcher.Constraint('Horizontal',id_enc5)) 
+  esq_tribord.addConstraint(Sketcher.Constraint('Coincident', id_extremites_ext_tribord[2], id_extremites_ext_tribord[3], id_enc5, 2))
+
+
+  return 0
+
+
+# Fonction de tracé de l'esquisse de la bauquière
+# = ceinture intérieure maintenant les couples au niveau du pont
+# Positionnement des encoches
+def trace_esq_bauquiere (position_etrave, hauteur_pont_etrave, angle_pont_etrave_poupe, longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, positions_couples_etrave, epaisseur_couples, epaisseur_bauquiere, epaisseur_bois_armature, epaisseur_bois_bordage, epaisseur_joint_capot) :
+
+  # création et positionnement de l'esquisse
+  esq = App.ActiveDocument.addObject('Sketcher::SketchObject','Bauquiere')
+  esq.Placement = App.Placement(App.Vector(0.000000, position_etrave, (hauteur_pont_etrave - epaisseur_bois_armature - epaisseur_joint_capot) ), App.Rotation(90.0, angle_pont_etrave_poupe, 0.0))
+
+  # nombre de segments à tracer entre 2 couples
+  nb_segments_entre_couples = 3
+
+  # liste des abscisses du tracé extérieur: démarrage au premier couple et ajout de nb_segments_entre_couples points entre chaque couple
+  abscisses_ext = numpy.array([positions_couples_etrave[0]])
+  precedente_position = abscisses_ext[0]
+  for position in positions_couples_etrave :
+    if position > precedente_position :
+      for i in range (nb_segments_entre_couples) :
+        abscisses_ext = numpy.append( abscisses_ext, precedente_position + (i+1) * (position - precedente_position) / nb_segments_entre_couples )
+    precedente_position = position
+
+   # liste des abscisses du tracé intérieur: on s'arrête à poupe moins épaisseur bauquière
+  abscisses_int = abscisses_ext[ abscisses_ext < (abscisses_ext[-1] - epaisseur_bauquiere) ]
+  abscisses_int = numpy.append( abscisses_int, (abscisses_ext[-1] - epaisseur_bauquiere) )
+
+  # vecteurs des ordonnées
+  ordonnees_ext = ordonnees_pont (longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, abscisses_ext)
+  ordonnees_ext = ordonnees_ext - epaisseur_bois_bordage - epaisseur_couples + epaisseur_bauquiere
+  ordonnees_int = ordonnees_pont (longueur_etrave_poupe, position_maitre_bau_etrave, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, abscisses_int)
+  ordonnees_int = ordonnees_int - epaisseur_bois_bordage - epaisseur_couples 
+
+  # tracé des courbes tribord et babord extérieures et intérieures
+  id_extremites_tribord_ext = trace_courbe (esq, abscisses_ext, ordonnees_ext)
+  id_extremites_babord_ext = trace_courbe (esq, abscisses_ext, -ordonnees_ext)
+  id_extremites_tribord_int = trace_courbe (esq, abscisses_int, ordonnees_int)
+  id_extremites_babord_int = trace_courbe (esq, abscisses_int, -ordonnees_int)
+
+  # contraitnes sur les extrémités
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_tribord_ext[0],id_extremites_tribord_ext[1],abscisses_ext[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_tribord_ext[0],id_extremites_tribord_ext[1],ordonnees_ext[0]))
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_babord_ext[0],id_extremites_babord_ext[1],abscisses_ext[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_babord_ext[0],id_extremites_babord_ext[1],-ordonnees_ext[0]))
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_tribord_int[0],id_extremites_tribord_int[1],abscisses_int[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_tribord_int[0],id_extremites_tribord_int[1],ordonnees_int[0]))
+  esq.addConstraint(Sketcher.Constraint('DistanceX',id_extremites_babord_int[0],id_extremites_babord_int[1],abscisses_int[0])) 
+  esq.addConstraint(Sketcher.Constraint('DistanceY',id_extremites_babord_int[0],id_extremites_babord_int[1],-ordonnees_int[0]))
+  # fermeture de la courbe
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 1, id_extremites_tribord_ext[0],id_extremites_tribord_ext[1]))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 2, id_extremites_tribord_int[0],id_extremites_tribord_int[1]))
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 1, id_extremites_babord_ext[0],id_extremites_babord_ext[1]))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 2, id_extremites_babord_int[0],id_extremites_babord_int[1]))
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 1, id_extremites_babord_ext[2],id_extremites_babord_ext[3]))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 2, id_extremites_tribord_ext[2],id_extremites_tribord_ext[3]))
+  id_segmt = esq.addGeometry(Part.LineSegment( App.Vector ( 0 , 0 , 0 ) , App.Vector ( 1 , 1 , 0 ) ))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 1, id_extremites_babord_int[2],id_extremites_babord_int[3]))
+  esq.addConstraint(Sketcher.Constraint('Coincident', id_segmt, 2, id_extremites_tribord_int[2],id_extremites_tribord_int[3]))
+ 
+  return 0
+
+
+# PRINCIPAL
+
+# Paramètres matériaux
+epaisseur_bois_armature = 5.0
+epaisseur_bois_bordage = 2.0
+epaisseur_joint_capot = 2.5
+
+# Paramètres étrave-poupe
+position_etrave = 0.0
+longueur_etrave_poupe = 720.0
+position_maitre_bau_etrave = 0.55 * longueur_etrave_poupe
+
+# Paramètres du pont
+hauteur_pont_etrave = 0.10 * longueur_etrave_poupe
+hauteur_pont_poupe = 2.0/3.0 * hauteur_pont_etrave
+largeur_pont_maitre_bau = 0.30 * longueur_etrave_poupe
+largeur_pont_etrave = 0.025 * largeur_pont_maitre_bau
+largeur_pont_poupe = 0.75 * largeur_pont_maitre_bau
+angle_bord_etrave = 30.0
+angle_bord_poupe = -10.0
+angle_bord_maitre_bau = 0.0
+epaisseur_etrave = longueur_etrave_poupe / 20.0
+epaisseur_bord = largeur_pont_maitre_bau / 10.0
+
+# Paramètres d'encoches
+profondeur_encoches = epaisseur_bord / 2.0
+largeur_encoches = epaisseur_bois_armature
+
+
+# Paramètres de la quille
+tirant_d_eau = longueur_etrave_poupe / 20.0
+position_max_profondeur_etrave = 0.53 * longueur_etrave_poupe
+profondeur_max = tirant_d_eau
+profondeur_poupe = 0.0
+angle_quille_etrave = -70.0
+angle_quille_profondeur_max = 0.0
+angle_quille_poupe = 20.0
+position_jonction_etrave = 0.05 * longueur_etrave_poupe
+profondeur_jonction_etrave = 0.20 * profondeur_max
+epaisseur_quille = epaisseur_bord
+
+# Paramètres du puits de dérive
+position_derive_etrave = 0.53 * longueur_etrave_poupe
+largeur_derive = 0.10 * longueur_etrave_poupe
+positions_puits_derive = [position_derive_etrave - largeur_derive/2.0 - epaisseur_quille, position_derive_etrave - largeur_derive/2.0, position_derive_etrave + largeur_derive/2.0, position_derive_etrave + largeur_derive/2.0 + epaisseur_quille]
+hauteur_puits_derive = ( hauteur_pont_etrave + hauteur_pont_poupe )/4.0
+epaisseur_puits_derive = 3.0 * epaisseur_bois_armature
+demi_ecartement_puits_derive = epaisseur_bois_armature
+
+# Paramètres des couples
+nb_couples = 10
+profondeur_cale = 0.0
+epaisseur_bauquiere = profondeur_encoches
+epaisseur_couples = epaisseur_bord + epaisseur_bauquiere - epaisseur_bois_bordage
+
+# liste des positions des couples (pas de couples pour l'étrave) et des types (0 = couple standard, 1 = couple de dérive, 2 = couple de poupe)
+positions_couples = []
+positions_couples_etrave = []
+types_couples = []
+for i in range(nb_couples) :
+  positions_couples_etrave.append( (i+1) * longueur_etrave_poupe / nb_couples )
+  positions_couples.append( positions_couples_etrave[-1] + position_etrave )
+  if (positions_couples_etrave[-1] >= positions_puits_derive[0]) and (positions_couples_etrave[-1] <= positions_puits_derive[3]) :
+    types_couples.append(1)
+  else :
+   types_couples.append(0)
+types_couples[-1] = 2
+
+
+# calcul des paramètres du pont (dilatation des positions si le pont est incliné)
+tang_angle_pont_etrave_poupe = (hauteur_pont_etrave - hauteur_pont_poupe) / longueur_etrave_poupe
+angle_pont_etrave_poupe = math.atan(tang_angle_pont_etrave_poupe) / math.pi *180
+longueur_etrave_poupe_b = math.sqrt( longueur_etrave_poupe**2 + (hauteur_pont_etrave - hauteur_pont_poupe)**2 )
+position_maitre_bau_etrave_b = position_maitre_bau_etrave * longueur_etrave_poupe_b / longueur_etrave_poupe
+epaisseur_etrave_b = epaisseur_etrave * longueur_etrave_poupe_b / longueur_etrave_poupe
+positions_couples_etrave_b=[]
+for i in range(len(positions_couples)) :
+  positions_couples_etrave_b.append( (positions_couples[i] - position_etrave) * longueur_etrave_poupe_b / longueur_etrave_poupe )
+
+
+
+# liste des hauteurs des couples (pas de couple pour l'étrave)
+hauteurs_couples = []
+for i in range(nb_couples) :
+  hauteurs_couples.append( hauteur_pont_etrave + (i+1) * (hauteur_pont_poupe - hauteur_pont_etrave) / nb_couples )
+
+# calcul du vecteur des largeurs des couples
+x = numpy.array(positions_couples_etrave_b)
+demi_largeurs_couples = ( ordonnees_pont (longueur_etrave_poupe_b, position_maitre_bau_etrave_b, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, x) - epaisseur_bois_bordage )
+
+# calcul du vecteur des profondeurs des couples
+x = numpy.array(positions_couples)
+profondeurs_couples = -(ordonnees_quille (longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave - epaisseur_bois_armature/2.0, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, x)) - epaisseur_bois_bordage
+
+# tracé du pont
+trace_esq_pont (position_etrave, hauteur_pont_etrave, angle_pont_etrave_poupe, longueur_etrave_poupe_b, position_maitre_bau_etrave_b, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, epaisseur_etrave_b, epaisseur_bord, positions_couples_etrave_b, (profondeur_encoches*longueur_etrave_poupe_b/longueur_etrave_poupe), profondeur_encoches, largeur_encoches)
+
+# tracé des couples
+couples = nb_couples * [0]
+for i in range(nb_couples) :
+  couples[i] = trace_esq_couple (i, positions_couples[i], types_couples[i], profondeurs_couples[i], hauteurs_couples[i], demi_largeurs_couples[i], epaisseur_couples, epaisseur_puits_derive, profondeur_cale, profondeur_encoches, profondeur_encoches, epaisseur_bauquiere, epaisseur_bois_armature, epaisseur_joint_capot)
+
+# tracé de la quille
+trace_esq_quille (position_etrave, longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, tang_angle_pont_etrave_poupe, epaisseur_etrave, epaisseur_quille, positions_couples_etrave, positions_puits_derive, hauteur_puits_derive, profondeur_encoches, (profondeur_encoches+epaisseur_bois_bordage), largeur_encoches)
+trace_esq_puits_derive (position_etrave, longueur_etrave_poupe, position_max_profondeur_etrave, hauteur_pont_etrave, profondeur_max, profondeur_poupe, angle_quille_etrave, angle_quille_profondeur_max, angle_quille_poupe, position_jonction_etrave, profondeur_jonction_etrave, tang_angle_pont_etrave_poupe, epaisseur_etrave, epaisseur_quille, positions_puits_derive, hauteur_puits_derive, demi_ecartement_puits_derive, profondeur_encoches, largeur_encoches)
+
+# tracé de la bauquière
+trace_esq_bauquiere (position_etrave, hauteur_pont_etrave, angle_pont_etrave_poupe, longueur_etrave_poupe_b, position_maitre_bau_etrave_b, largeur_pont_etrave, largeur_pont_maitre_bau, largeur_pont_poupe, angle_bord_etrave, angle_bord_maitre_bau, angle_bord_poupe, positions_couples_etrave_b, epaisseur_couples, epaisseur_bauquiere, epaisseur_bois_armature, epaisseur_bois_bordage, epaisseur_joint_capot)
+
+App.ActiveDocument.recompute()
