@@ -39,6 +39,8 @@ The apertures are filled with a mix of glue and wood dust (~50/50)
 
 Now the structure of the hull is done !
 
+<img src="assets/result_01.jpg" alt="drawing" width="400"/>
+
 ## Making the hull stronger !
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
