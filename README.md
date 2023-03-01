@@ -4,7 +4,7 @@
  
 ### The idea
 
-- The project started when i was 14 yo, i wanted to build an RC sailboat from scratch, my dad helped me to build up most of the basis (designing and creating the hull).
+- The project started when i was 14 yo in 2021, i wanted to build an RC sailboat from scratch, my dad helped me to build up most of the basis (designing and creating the hull).
 - The project was abandoned for 2 years : School / Covid / Laziness (mostly the last reason).
 - I now want to finish the project to have a base to program on embedded electronics in Rust
 
