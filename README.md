@@ -19,11 +19,13 @@ The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro
 
 ## Creating the skeleton
 
-**TODO**
+The skeleton was cut in plywood with a laser machine at the [HATLAB](www.hatlab.fr).
+In order to do this, the different parts of the skeleton were exported in DXF file format, and then imported in LaserCut53.
+Finally, the wooden parts are simply glued together to create the skeleton
 
 ## Adding the slats
 
-This part was tricky, each wooden slate needs to be strongly  maintained for 24h along the hull.
+This part was tricky, each wooden slate needs to be strongly  maintained for 24h along the hull to dry the glue.
 At the beginning, simple clamps are adequate.
 
 <img src="assets/IMG_0140.JPG" alt="drawing" width="200"/>
@@ -50,7 +52,7 @@ Now the structure of the hull is done !
 
 <img src="assets/result_01.jpg" alt="drawing" width="400"/>
 
-## Making the hull stronger !
+## Resin
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
 [This ressource](https://navi.modelisme.com/article138.html)  (in French) helped me to create the resin in the right proportions.
