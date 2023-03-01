@@ -1,6 +1,5 @@
 # Gupy (Guillaume Personal Yatch)
 
-Guillaume Personal Yatch
  <img src="assets/gupy_logo.png" alt="drawing" width="200"/>
 
 
