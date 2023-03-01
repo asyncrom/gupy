@@ -19,12 +19,12 @@ The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro
 
 ## Creating the skeleton
 
-TODO
+**TODO**
 
 ## Adding the slats
 
 This part was tricky, each wooden slate needs to be strongly  maintained for 24h along the hull.
-At the beginning, simple clamps are enough.
+At the beginning, simple clamps are adequate.
 
 <img src="assets/IMG_0140.JPG" alt="drawing" width="200"/>
 
@@ -37,7 +37,7 @@ The nose needed multiple attempts to be glued correctly.
 
 <img src="assets/IMG_2105.JPG" alt="drawing" width="200"/>
 
-Then, the hull was sanded down, to remove most of the defects.
+Then, the hull was sanded down, to remove most of the defects and irregularities.
 
 <img src="assets/20230301_093308.jpg" alt="drawing" width="400"/>
 
@@ -54,3 +54,4 @@ Now the structure of the hull is done !
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
 [This ressource](https://navi.modelisme.com/article138.html)  (in French) helped me to create the resin in the right proportions.
+**TODO**
