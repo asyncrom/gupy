@@ -19,7 +19,7 @@ The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro
 
 ## Creating the skeleton
 
-The skeleton was cut in plywood with a laser machine at the [HATLAB](https://www.hatlab.fr).
+The skeleton was cut in plywood with a [https://www.hatlab.fr/equipement/decoupe-laser/](laser machine) at the [HATLAB](https://www.hatlab.fr).
 In order to do this, the different parts of the skeleton were exported in DXF file format, and then imported in LaserCut53.
 Finally, the wooden parts are simply glued together to create the skeleton
 
