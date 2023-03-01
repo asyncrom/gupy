@@ -7,9 +7,14 @@ Guillaume Personal Yatch
 ***
 ## Designing the hull
 
+TODO
+
 ## Creating the skeleton
 
+TODO
+
 ## Adding the slats
+
 This part was tricky, each wooden slate needs to be strongly  maintained for 24h along the hull.
 At the beginning, simple clamps are enough.
 
