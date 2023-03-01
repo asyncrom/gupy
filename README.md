@@ -43,4 +43,4 @@ Now the structure of the hull is done !
 ## Making the hull stronger !
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
-[This ressource](https://navi.modelisme.com/article138.html){:target="_blank"} (in French) helped me to create the resin in the right proportions.
+[This ressource](https://navi.modelisme.com/article138.html)(in French) helped me to create the resin in the right proportions.
