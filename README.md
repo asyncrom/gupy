@@ -13,13 +13,13 @@ This repo record the evolution of the making from scratch of a 0.7meters RC sail
 ***
 ## Designing the hull
 
-The hull was designed on [FreeCad](https://www.freecad.org/ target="_blank") with a Python macro by dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
+The hull was designed on <a href="https://www.freecad.org/" target="_blank">Freecade </a> with a Python macro by dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
 
 <img src="assets/fc_01.png" alt="drawing" width="75"/> <img src="assets/fc_02.png" alt="drawing" width="620"/>
 
 ## Creating the skeleton
 
-The skeleton was cut in plywood with a laser machine at the [HATLAB](https://www.hatlab.fr).
+The skeleton was cut in plywood with a laser machine at the <a href="https://www.hatlab.fr" target="_blank">HATLAB </a>.
 In order to do this, the different parts of the skeleton were exported in DXF file format, and then imported in LaserCut53.
 Finally, the wooden parts are simply glued together to create the skeleton
 
@@ -55,5 +55,5 @@ Now the structure of the hull is done !
 ## Resin
 
 To make the hull **water-proof** and strong, epoxy resin needs to be applied over.
-[This ressource](https://navi.modelisme.com/article138.html)  (in French) helped me to create the resin in the right proportions.
+<a href="https://navi.modelisme.com/article138.html" target="_blank">This ressource</a>  (in French) helped me to create the resin in the right proportions.
 **TODO**
