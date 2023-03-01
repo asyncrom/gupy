@@ -5,15 +5,15 @@
 ### The idea
 
 - The project started when i was 14 yo, i wanted to build an RC sailboat from scratch, my dad helped me to build up most of the basis (designing and creating the hull).
-- The project was abandoned for 2 years (School / Covid / **Laziness**)
-- I now want to finish the project to have a base to program on embedded electronics
+- The project was abandoned for 2 years : School / Covid / Laziness (mostly the last reason).
+- I now want to finish the project to have a base to program on embedded electronics in Rust
 
-This repo is updated as the project evolves.
+This repo record the evolution of the making from scratch of a 0.7meters RC sailboat in wood.
 
 ***
 ## Designing the hull
 
-The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro by my dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
+The hull was designed on [FreeCad](https://www.freecad.org/) with a Python macro by dad. Code here: [macro_hull_skeleton.fcmacro](macro_hull_skeleton.fcmacro) (french).
 
 <img src="assets/fc_01.png" alt="drawing" width="75"/> <img src="assets/fc_02.png" alt="drawing" width="620"/>
 
